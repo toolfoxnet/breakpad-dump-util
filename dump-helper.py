@@ -1,10 +1,11 @@
 #!/usr/env python3
 # -*- coding: utf-8 -*-
 
+from operator import contains
 import os
 import sys
 import subprocess
-
+import argparse
 
 def colorful_print(level, msg):
     if level == 'error':
@@ -15,68 +16,88 @@ def colorful_print(level, msg):
         print(f"\033[32m{msg}\033[0m")
     else:
         print(msg)
+    
+def print_separator(level, str = ''):
+    len_str = len(str)
+    if len_str > 0:
+        total_hash = 80 - len_str - 2
+        if total_hash < 2:
+            total_hash = 2
+        left_hash = total_hash // 2
+        right_hash = total_hash - left_hash
+        context = '#' * left_hash
+        colorful_print(level, f"{context} {str} {'#' * right_hash}")
+    else:
+        colorful_print(level, '#' * 80)
 
-colorful_print('info', "********************************************************")
-colorful_print('info', "* Project:   https://gitee.com/izmj/dump_helper        *")
-colorful_print('info', "* Version:   v2.5.1 (2025-02-10)                       *")
-colorful_print('info', "********************************************************")
+def get_exec_postfix():
+    if sys.platform == "win32":
+        exec_postfix = ".exe"
+    elif sys.platform == "linux":
+        exec_postfix = ""
+    elif sys.platform == "darwin":
+        exec_postfix = ""
+    else:
+        colorful_print('error', f"# Unsupported platform: {sys.platform}")
+        input("Press Enter to exit...")
+        exit(1)
+    return exec_postfix
 
-if sys.platform == "win32":
-    exec_postfix = ".exe" 
-    exec_path = "third-party/x86_64/win32"
-elif sys.platform == "linux":
-    exec_postfix = ""
-    exec_path = "third-party/x86_64/linux"
-elif sys.platform == "darwin":
-    exec_postfix = ""
-    exec_path = "third-party/x86_64/darwin"
-else:
-    colorful_print('error', f"Unsupported platform: {sys.platform}")
-    input("Press Enter to exit...")
-    exit(1)
-
-# If current script is not end with .py
-# It means current script is a pyinstaller bundle
-if not sys.argv[0].endswith(".py"):
-    exec_path = 'res';
-    symbol_dir = os.path.join(os.path.dirname(sys.executable), '.dump_helper_sym')
-else:
-    symbol_dir = os.path.join(os.path.dirname(sys.argv[0]), '.dump_helper_sym')
+def get_exec_dir():
+    if sys.platform == "win32":
+        exec_dir = "third-party/x86_64/win32"
+    elif sys.platform == "linux":
+        exec_dir = "third-party/x86_64/linux"
+    elif sys.platform == "darwin":
+        exec_dir = "third-party/x86_64/darwin"
+    else:
+        colorful_print('error', f"# Unsupported platform: {sys.platform}")
+        input("Press Enter to exit...")
+        exit(1)
+    return exec_dir
+    
 
 def get_resource_path(relative_path):
     if getattr(sys, 'frozen', False):
         base_path = sys._MEIPASS
     else:
-        base_path = os.path.abspath(".")
+        base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
-work_dir = get_resource_path('.')
+def get_dump_syms_path():
+    dump_syms_path = get_resource_path(os.path.join(get_exec_dir(), f"dump_syms{get_exec_postfix()}"))
+    if not os.path.exists(dump_syms_path):
+        colorful_print('error', f"# ERROR: Tools [{dump_syms_path}] not exists!")
+        input("Press Enter to exit...")
+        exit(1)
+    return dump_syms_path
 
-# Check dump_syms
-dump_syms_path = get_resource_path(os.path.join(exec_path, f"dump_syms{exec_postfix}"))
-if not os.path.exists(dump_syms_path):
-    colorful_print('error', f">>>> ERROR: Tools [{dump_syms_path}] not exists!")
-    input("Press Enter to exit...")
-    exit(1)
+def get_symbole_dir():
+    symbol_dir = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), '.sym')
+    if not os.path.exists(symbol_dir):
+        os.makedirs(symbol_dir)
+    return symbol_dir
 
-# Check stackwalk
-stackwalk_path = get_resource_path(os.path.join(exec_path , f"minidump-stackwalk{exec_postfix}"))
-if not os.path.exists(stackwalk_path):
-    colorful_print('error', f">>>> ERROR: Tools [{stackwalk_path}] not exists!")
-    input("Press Enter to exit...")
-    exit(1)
+def get_stackwalk_path():
+    stackwalk_path = get_resource_path(os.path.join(get_exec_dir(), f"minidump-stackwalk{get_exec_postfix()}"))
+    if not os.path.exists(stackwalk_path):
+        colorful_print('error', f"# ERROR: Tools [{stackwalk_path}] not exists!")
+        input("Press Enter to exit...")
+        exit(1)
+    return stackwalk_path
 
 def dump_syms(so_path):
     if not os.path.exists(so_path):
-        colorful_print('error', f">>>> ERROR: File [{so_path}] not exists!")
-        return
+        colorful_print('error', f"# ERROR: File [{so_path}] not exists!")
+        exit(1)
 
+    symbol_dir = get_symbole_dir()
     # dump symbols
     so_target_path = os.path.join(symbol_dir, os.path.basename(so_path))
     if not os.path.exists(so_target_path):
         os.makedirs(so_target_path)
 
-    dump_syms_cmd = f"{dump_syms_path} {so_path} > {so_target_path}.sym"
+    dump_syms_cmd = f"{get_dump_syms_path()} {so_path} > {so_target_path}.sym"
     
     subprocess.run(dump_syms_cmd, shell=True)
 
@@ -84,10 +105,10 @@ def dump_syms(so_path):
     with open(f"{so_target_path}.sym", "r") as f:
         lines = f.readlines()
         if len(lines) < 2:
-            colorful_print('error', "dump symbols failed")
+            colorful_print('error', "# Dump symbols failed")
             return
         id = lines[0].split()[3]
-        colorful_print('info', f"symbol id: {id}")
+        colorful_print('debug', f"# Symbol id: {id}")
 
     # move symbols to symbols folder
     symbols_folder = os.path.join(symbol_dir, os.path.basename(so_path), id)
@@ -95,16 +116,16 @@ def dump_syms(so_path):
         os.makedirs(symbols_folder)
 
     target_sym_path = os.path.join(symbols_folder, os.path.basename(so_path) + ".sym")
-    #if os.path.exists(target_sym_path):
-    #    colorful_print('warning', "symbols already exists! skip.")
-    #    return
+    if os.path.exists(target_sym_path):
+        colorful_print('warning', f"Symbols have already been parsed. Skipping regeneration. If you need to regenerate, please manually delete the following file and try again.\n{target_sym_path}")
+        return
 
     os.rename(f"{so_target_path}.sym", target_sym_path)
-    colorful_print('info', f"symbols saved to {target_sym_path}")
+    colorful_print('debug', f"# Symbols saved to {target_sym_path}")
 
-def stack_walk(dump_path):
+def stack_walk(dump_path, generate_raw = False):
     if not os.path.exists(dump_path):
-        colorful_print('error', "dump file not exists: %s" % dump_path)
+        colorful_print('error', f"# Dump file not exists: {dump_path}")
         return
 
     # check if stack walk already exists, skip or continue
@@ -113,19 +134,20 @@ def stack_walk(dump_path):
     #    return
 
     # stack walk
-    stack_walk_cmd = f"{stackwalk_path} {dump_path} {symbol_dir} > {dump_path}.stack"
+    stack_walk_cmd = f"{get_stackwalk_path()} {dump_path} {get_symbole_dir()} > {dump_path}.stack"
     subprocess.run(stack_walk_cmd, shell=True)
 
-    stack_walk_cmd = f"{stackwalk_path} {dump_path} {symbol_dir} --dump > {dump_path}.raw"
-    subprocess.run(stack_walk_cmd, shell=True)
+    if generate_raw:
+        stack_walk_cmd = f"{get_stackwalk_path()} {dump_path} {get_symbole_dir()} --dump > {dump_path}.raw"
+        subprocess.run(stack_walk_cmd, shell=True)
 
-    colorful_print('info', "********************* Recent Stack *********************")
-
+    print_separator('info', 'Stack Brief')
+    
     # read stack
     with open(f"{dump_path}.stack", "r") as f:
         lines = f.readlines()
         if len(lines) < 2:
-            colorful_print('error', "stack walk failed!")
+            colorful_print('error', "# Stack walk failed!")
             return
         
         print_lines = 20
@@ -134,29 +156,40 @@ def stack_walk(dump_path):
         for line in lines:
             line = line.strip()
             if ".so" in line or ".lib" in line or "Thread" in line or "Crash" in line:
+                # 原版格式中的文件名和行号距离太远。无法实现自动文件跳转
+                line = line.replace(" : ", ":")
                 print(line)
                 print_lines -= 1
                 if print_lines == 0:
                     break
 
-    colorful_print('info', "********************************************************")
+    print_separator('info')
 
-if __name__ == "__main__":
+def main():
 
-    args = []
-    if len(sys.argv) < 2:
+    print_separator('info', "Breakpad Dump Util (ToolFox.Net v20260327)")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--auto-close", action="store_true", help="Close automatically after processing")
+    parser.add_argument("--raw", action="store_true", help="Generate .raw dump detail file")
+    parser.add_argument("files", nargs="*", help="Files or directories to process")
+
+    parsed_args = parser.parse_args()
+
+    auto_close = parsed_args.auto_close
+    raw = parsed_args.raw
+    args = parsed_args.files
+
+    if not args:
         # Wait user input library or dump file to process
         while True:
-            file = input("Please input library or dump file(one by one):")
+            file = input("# Please input library or dump file(one by one):")
             if file == "":
                 break
 
             args.append(file)
-    else:
-        args = sys.argv[1:]
 
     if len(args) == 0:
-        colorful_print("error", "No libraries or dump files input. Exit.")
+        colorful_print("error", "# No libraries or dump files input. Exit.")
         exit(1)
 
     # If put a directory, get all files in it.
@@ -170,9 +203,8 @@ if __name__ == "__main__":
     for so_path in args:
         # Fix param that endsWith space
         so_path = so_path.strip()
-        if so_path.endswith(".so") or so_path.endswith(".dll") or so_path.endswith(".lib"):
-            colorful_print('info', "********************* Dump Symbol **********************")
-            colorful_print("debug", f"Processing library {so_path}...")
+        if so_path.endswith(".so") or so_path.endswith(".dll") or so_path.endswith(".lib") or not '.' in so_path:
+            colorful_print("debug", f"# Processing library symbols:\n# --> {so_path}")
             dump_syms(so_path)
 
     # Parse dump files
@@ -180,9 +212,12 @@ if __name__ == "__main__":
         # Fix param that endsWith space
         dump_path = dump_path.strip()
         if dump_path.endswith(".dmp") or dump_path.endswith(".minidump"):
-            colorful_print('info', "********************** Stack Walk **********************")
-            colorful_print("debug", f"Processing dump file {dump_path}...")
-            stack_walk(dump_path)
+            colorful_print("debug", f"# Processing dump files:\n# --> {dump_path}")
+            stack_walk(dump_path, raw)
 
     # pause
-    input("Press Enter to exit...")
+    if not auto_close:
+        input("Press Enter to exit...")
+
+if __name__ == "__main__":
+    main()
