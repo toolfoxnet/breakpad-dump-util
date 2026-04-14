@@ -44,17 +44,18 @@ def get_exec_postfix():
     return exec_postfix
 
 def get_exec_dir():
+    if getattr(sys, 'frozen', False):
+        return "res"
     if sys.platform == "win32":
-        exec_dir = "third-party/x86_64/win32"
+        return "third-party/x86_64/win32"
     elif sys.platform == "linux":
-        exec_dir = "third-party/x86_64/linux"
+        return "third-party/x86_64/linux"
     elif sys.platform == "darwin":
-        exec_dir = "third-party/x86_64/darwin"
+        return "third-party/x86_64/darwin"
     else:
         colorful_print('error', f"# Unsupported platform: {sys.platform}")
         input("Press Enter to exit...")
         exit(1)
-    return exec_dir
     
 
 def get_resource_path(relative_path):
@@ -97,9 +98,10 @@ def dump_syms(so_path):
     if not os.path.exists(so_target_path):
         os.makedirs(so_target_path)
 
-    dump_syms_cmd = f"{get_dump_syms_path()} {so_path} > {so_target_path}.sym"
-    
-    subprocess.run(dump_syms_cmd, shell=True)
+    dump_syms_cmd = [get_dump_syms_path(), so_path]
+
+    with open(f"{so_target_path}.sym", "w", encoding="utf-8", errors="replace") as out:
+        subprocess.run(dump_syms_cmd, stdout=out, stderr=subprocess.DEVNULL, check=False)
 
     # read id of symbols
     with open(f"{so_target_path}.sym", "r") as f:
@@ -134,12 +136,14 @@ def stack_walk(dump_path, generate_raw = False):
     #    return
 
     # stack walk
-    stack_walk_cmd = f"{get_stackwalk_path()} {dump_path} {get_symbole_dir()} > {dump_path}.stack"
-    subprocess.run(stack_walk_cmd, shell=True)
+    stack_walk_cmd = [get_stackwalk_path(), dump_path, get_symbole_dir()]
+    with open(f"{dump_path}.stack", "w", encoding="utf-8", errors="replace") as out:
+        subprocess.run(stack_walk_cmd, stdout=out, stderr=subprocess.DEVNULL, check=False)
 
     if generate_raw:
-        stack_walk_cmd = f"{get_stackwalk_path()} {dump_path} {get_symbole_dir()} --dump > {dump_path}.raw"
-        subprocess.run(stack_walk_cmd, shell=True)
+        stack_walk_cmd = [get_stackwalk_path(), dump_path, get_symbole_dir(), "--dump"]
+        with open(f"{dump_path}.raw", "w", encoding="utf-8", errors="replace") as out:
+            subprocess.run(stack_walk_cmd, stdout=out, stderr=subprocess.DEVNULL, check=False)
 
     print_separator('info', 'Stack Brief')
     
